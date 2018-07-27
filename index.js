@@ -6,16 +6,14 @@ let io = require('socket.io')(http);
         // console.log(io.sockets.connected)
        // join then specific room
         socket.on('room', function(room){
-            console.log('room joined', room.user_room)
-
             io.emit('callSpecificUser', {user_room:room.user_room, user_host_room:room.user_host_room, room_id:socket.id})
         });
-        socket.on('Enterroom', function(room) {
+        socket.on('Enterroom', (room) => {
             socket.join(room)
         })
         socket.on('add-message', (message) => {
-            console.log('retorno msg', message.room_info.user_room)
-            io.in(message.room_info.user_room).emit('message',  {text: message.text, created: new Date()});
+            console.log('message para', message.room_info.user_host_room)
+            io.in(message.room_info.user_host_room).emit('message',  {text: message.text, from: message.current_user, created: new Date()});
         });
         socket.on('disconnect', function(){
             io.emit('users-changed', {user: socket.nickname, event: 'left'});   
