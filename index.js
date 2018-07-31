@@ -14,20 +14,19 @@ let io = require('socket.io')(http);
     }
     // handle incoming connections from clients
     io.sockets.on('connection', function(socket) {
-        // console.log(io.sockets.connected)
        // join then specific room
         socket.on('room', function(room){
             var room_id =  socket.id
-            console.log(AlfaNumerica())
-            socket.join(AlfaNumerica())
+            socket.join(room_id)
+            console.log('id do canal', room.user_room + room.user_host_room, room_id)
             io.emit('callSpecificUser', {user_room:room.user_room, user_host_room:room.user_host_room, room_id:room_id})
         });
         socket.on('Enterroom', (room) => {
-            console.log('enter room', room)
+            console.log('Join no canal de id', room)
             socket.join(room)
         })
         socket.on('add-message', (message) => {
-            console.log('add-message', message.room_info.room_id)
+            console.log('messagem de', message.current_user, 'no canal id', message.room_info.room_id)
             io.in(message.room_info.room_id).emit('message',  {text: message.text, from: message.current_user, created: new Date()});
         });
         socket.on('disconnect', function(){
