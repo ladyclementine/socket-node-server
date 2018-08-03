@@ -1,19 +1,14 @@
 let app = require('express')();
 let http = require('http').Server(app);
 let io = require('socket.io')(http);
-
-    function AlfaNumerica(){ 
-        var letras = '0123456789abcdefghijklmnopqrstuvwxyz'; 
-        var aleatorio = ''; 
-        var tamanho=10; 
-        for (var i = 0; i < tamanho; i++) { 
-        var rnum = Math.floor(Math.random() * letras.length); 
-        aleatorio += letras.substring(rnum, rnum + 1); 
-        } 
-        return aleatorio
-    }
+var redis = require("redis"),
+    client = redis.createClient();
+    client.on('connect', function () {
+        console.log('connected');
+    });
     // handle incoming connections from clients
     io.sockets.on('connection', function(socket) {
+        console.log(socket.connected)
        // join then specific room
         socket.on('room', function(room){
             var room_id =  room.room_id
@@ -22,16 +17,23 @@ let io = require('socket.io')(http);
             io.emit('callSpecificUser', {user_room:room.user_room, user_host_room:room.user_host_room, room_id:room_id})
         });
         socket.on('Enterroom', (room) => {
-            io.in(room).clients((err , clients) => {
-                console.log(clients)
-                // clients will be array of socket ids , currently available in given room
-            });
             console.log('Join no canal de id', room)
             socket.join(room)
+        })
+        socket.on('get-message-history', (data) =>{
+            client.hgetall(`msgs_of_room_id_${data}`, function (err, object) {
+                console.log(object);
+                io.to(data).emit('message-history', object)
+            });
         })
         socket.on('add-message', (message) => {
             console.log('messagem de', message.current_user, 'no canal id', message.room_info.room_id)
             console.log('mandando', message.text, 'para room', message.room_info.room_id )
+            io.sockets.emit('messageToOutside',  {text: message.text, from: message.current_user, created: new Date()});
+            client.hmset(`msgs_of_room_id_${message.room_info.room_id}`, "text", `${message.text}`, "from", `${message.current_user}`)
+            client.hgetall(`msgs_of_room_id_${message.room_info.room_id}`, function (err, object) {
+                console.log(object);
+            });
             io.to(message.room_info.room_id).emit('message',  {text: message.text, from: message.current_user, created: new Date()});
         });
         socket.on('disconnect', function(){
