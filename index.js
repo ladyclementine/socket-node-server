@@ -1,39 +1,69 @@
 let app = require('express')();
 let http = require('http').Server(app);
 let io = require('socket.io')(http);
+const axios = require('axios');
+var cors = require('cors')
 var redis = require("redis"),
     client = redis.createClient();
     client.on('connect', function () {
         console.log('connected');
     });
-    // handle incoming connections from clients
+
+    app.use(cors())
+    // create an api/search route
+    app.get('/api/chats', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', 'http://localhost:8100');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        var chatList = []
+        // Extract the query from url and trim trailing spaces
+        const query = (req.query.query).trim();
+        console.log(query)
+        client.lrange(`chat_list_of_${query}`,  0, -1 , function (err, chats) {
+            if(chats.length){
+                for(var i = 0; i < chats.length; i++) {
+                    var chatObj = JSON.parse(chats[i])
+                    chatList.splice(-1, 0, chatObj);
+                }
+                console.log(chatList)
+            }
+            if(chatList){
+                return res.status(200).json({chatList});
+            } else {
+                const resultJSON = `${query} não tem conversas.`
+                return res.status(200).json({resultJSON});
+            }
+        });
+    });
+
     io.sockets.on('connection', function(socket) {
-        console.log(socket.connected)
        // join then specific room
         socket.on('room', function(room){
             var room_id =  room.room_id
             socket.join(room_id)
-            console.log('id do canal', room.user_room + room.user_host_room, room_id)
-            io.emit('callSpecificUser', {user_room:room.user_room, user_host_room:room.user_host_room, room_id:room_id})
+            var chat = {user_room:room.user_room, user_host_room:room.user_host_room, room_id:room_id}
+            var chatStr = JSON.stringify(chat);
+            client.LPUSH(`chat_list_of_${room.user_host_room}`, `${chatStr}`)
+            client.LPUSH(`chat_list_of_${room.user_room}`, `${chatStr}`)
+            io.emit('callUser', {user_room:room.user_room, user_host_room:room.user_host_room, room_id:room_id})
         });
-        socket.on('Enterroom', (room) => {
-            console.log('Join no canal de id', room)
+        socket.on('enterRoom', (room) => {
             socket.join(room)
         })
-        socket.on('get-message-history', (data) =>{
-            client.hgetall(`msgs_of_room_id_${data}`, function (err, object) {
-                console.log(object);
-                io.to(data).emit('message-history', object)
+        socket.on('get-message-history', (data) => {
+            client.lrange(`msgs_of_room_id_${data}`,  0, -1 , function (err, str) {
+                var list = []
+                for(var i = 0; i < str.length; i++) {
+                    console.log('msgs?', str[i]);
+                    var obj = JSON.parse(str[i])
+                    list.splice(-1, 0, obj);
+                    socket.emit('message-history', list)
+                }
             });
         })
         socket.on('add-message', (message) => {
-            console.log('messagem de', message.current_user, 'no canal id', message.room_info.room_id)
-            console.log('mandando', message.text, 'para room', message.room_info.room_id )
-            io.sockets.emit('messageToOutside',  {text: message.text, from: message.current_user, created: new Date()});
-            client.hmset(`msgs_of_room_id_${message.room_info.room_id}`, "text", `${message.text}`, "from", `${message.current_user}`)
-            client.hgetall(`msgs_of_room_id_${message.room_info.room_id}`, function (err, object) {
-                console.log(object);
-            });
+            var messageObj = {text: message.text, from: message.current_user, created: new Date()}
+            var str = JSON.stringify(messageObj);
+            client.LPUSH(`msgs_of_room_id_${message.room_info.room_id}`, `${str}`)
             io.to(message.room_info.room_id).emit('message',  {text: message.text, from: message.current_user, created: new Date()});
         });
         socket.on('disconnect', function(){
